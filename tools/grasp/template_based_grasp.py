@@ -106,6 +106,8 @@ def main(argv=None):
     ap.add_argument("--workpiece", required=True, help="工件模板点云 .ply 路径 (ICP source)")
     ap.add_argument("--lcm-url", default="udpm://239.255.76.67:7667?ttl=0",
                     help="LCM 地址 (ttl=0 本机; 跨机用 ttl=1+)")
+    ap.add_argument("--yes", "-y", action="store_true",
+                    help="跳过匹配后的人工确认, 直接执行 (自动化场景)")
     args = ap.parse_args(argv)
 
     CameraCls = get_camera_class()
@@ -146,10 +148,25 @@ def main(argv=None):
             arm_T = np.eye(4, dtype=np.float64)
             arm_T[:3, :3] = Rot.from_euler("xyz", APPROACH_RPY_RAD).as_matrix()
             arm_T[:3, 3] = arm_xyz
-            print(f"arm 目标位姿 (base 系): xyz={np.round(arm_xyz,4).tolist()} "
-                  f"rpy_deg={np.round(np.degrees(APPROACH_RPY_RAD),1).tolist()}")
 
-            # 5. 发抓取指令: 张手 -> 移臂 -> 抓取 (每步阻塞等桥 feedback)。
+            # 5. 人工确认: 展示匹配质量 + 工件中心 + 目标位姿, 确认后再执行 (安全)。
+            info = match.info
+            print("\n========== 模板匹配结果 ==========")
+            print(f"  ICP fitness = {info.get('fitness', '?'):.4f}   "
+                  f"rmse = {info.get('rmse', '?'):.5f} m")
+            print(f"  场景点 {info.get('segmented_points', '?')} <- 模板点 {info.get('model_points', '?')}")
+            print(f"  工件中心 (base 系): {np.round(center_base, 4).tolist()} m")
+            print(f"  arm 目标位姿 (base 系):")
+            print(f"    xyz     = {np.round(arm_xyz, 4).tolist()} m")
+            print(f"    rpy_deg = {np.round(np.degrees(APPROACH_RPY_RAD), 1).tolist()}")
+            print("==================================")
+            if not args.yes:
+                ans = input("确认执行抓取? [y/N]: ").strip().lower()
+                if ans not in ("y", "yes"):
+                    print("已取消, 跳过抓取 (机械臂停在扫描位)。")
+                    return
+
+            # 6. 发抓取指令: 张手 -> 移臂 -> 抓取 (每步阻塞等桥 feedback)。
             print("=== 通过 LCM 发送运动指令 (阻塞等桥 feedback) ===")
             cmd.move_hand(HAND_READY, timeout=HAND_TIMEOUT)
             print("  [1/3] hand 张开 OK")
@@ -158,7 +175,7 @@ def main(argv=None):
             cmd.move_hand(HAND_GRASP, timeout=HAND_TIMEOUT)
             print("  [3/3] hand 抓取 OK")
 
-            # 6. COOLDOWN: 关节空间从扫描位回到零位 (WARMUP 倒序)。
+            # 7. COOLDOWN: 关节空间从扫描位回到零位 (WARMUP 倒序)。
             print("=== COOLDOWN (扫描位 -> 零位) ===")
             run_joint_sequence(cmd, COOLDOWN_JOINTS, "cooldown")
             print("=== 抓取流程完成 ===")
