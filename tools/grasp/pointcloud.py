@@ -192,12 +192,15 @@ def _to_pcd(points, colors=None, default_color=(0.7, 0.7, 0.7)):
     return pcd
 
 
-def _show_with_picking(geometries, title):
-    """弹窗显示, shift+左键选点 -> 终端打印本次新选点坐标 (米)。关闭窗口继续。"""
+def _show_with_picking(geometries, title, point_size=5.0):
+    """弹窗显示, shift+左键选点 -> 终端打印本次新选点坐标 (米)。关闭窗口继续。
+    point_size: 渲染点大小 (默认 5, VisualizerWithVertexSelection 默认 1 太小看不见)。"""
     viz = o3d.visualization.VisualizerWithVertexSelection()
     viz.create_window(window_name=title)
     for g in geometries:
         viz.add_geometry(g)
+    # 关键: 默认点大小=1 几乎看不见, 调大 (原程序 draw_geometries 默认较大)
+    viz.get_render_option().point_size = point_size
     _last_count = [0]
 
     def _on_changed():
