@@ -86,9 +86,10 @@ def main(argv=None):
         with LcmCommander(lcm_url=args.lcm_url) as cmd:
             g = GraspTemplateBased(arm=cmd, hand=cmd, T_CAM2GRIPPER=T_CAM2GRIPPER, camera=cam)
             g.warm_up()
-            pointcloud = g.scan(SCAN_POSES)
 
             # 按大->中->小 顺序抓取 (显式指定, 不依赖文件名排序)
+            # 每个工件都重新 scan -> match -> grasp -> place
+            # (抓取可能碰动其他工件, 必须每次抓取前重新扫描获取最新状态)
             templates = [
                 "hex_hole_40mm_45mm_35mm.ply",   # 大
                 "hex_hole_30mm_35mm.ply",         # 中
@@ -98,6 +99,7 @@ def main(argv=None):
                 key = os.path.splitext(tpl)[0]
                 thickness = NUT_THICKNESS_M.get(key, 0.005)
                 print(f"\n--- 工件 {tpl} (厚度 {thickness*1000:.0f}mm) ---")
+                pointcloud = g.scan(SCAN_POSES)          # 每次抓取前重新扫描
                 grasp_pose = g.get_grasp_pose(
                     pointcloud, os.path.join(TEMPLATES_DIR, tpl), make_T_ee2object(thickness))
                 print(f"  grasp_pose xyz={np.round(grasp_pose[:3,3],4).tolist()}")
