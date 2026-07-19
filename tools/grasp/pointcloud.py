@@ -101,7 +101,7 @@ def ransac_filter_plane(points, colors=None,
     keep = ~(plane_inlier_mask | below_mask | above_max_mask)
     out_cols = np.asarray(colors)[keep] if colors is not None and len(colors) == len(pts) else None
     print(f"  RANSAC 平面过滤: 去桌面 {plane_inlier_mask.sum()} 点, "
-          f"去下方 {below_mask.sum()} 点, 去>={max_above_m*1000:.0f}cm 高 {above_max_mask.sum()} 点, "
+          f"去下方 {below_mask.sum()} 点, 去平面之上>{max_above_m*1000:.0f}mm 高 {above_max_mask.sum()} 点, "
           f"保留 {keep.sum()}/{len(pts)}")
     return pts[keep], out_cols, plane_model
 
