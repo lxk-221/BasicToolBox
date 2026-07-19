@@ -11,10 +11,17 @@ arm/hand 接口约定 (满足即可, 如 LcmCommander):
   hand.move_hand(positions)
 """
 import os
+import time
 
 import numpy as np
+from scipy.spatial.transform import Rotation as Rot
 
 from . import pointcloud as pc
+
+
+def _rotmat_to_quat(R):
+    """3x3 旋转矩阵 -> xyzw 四元数 (打印调试用)。"""
+    return Rot.from_matrix(R).as_quat()
 
 
 class Grasp():
@@ -109,12 +116,16 @@ class GraspTemplateBased(Grasp):
             raise RuntimeError("scan 需要 camera (构造时传入)")
         frames = []
         for i, T in enumerate(scan_poses, 1):
-            print(f"  scan [{i}/{len(scan_poses)}] xyz={np.round(T[:3,3],3).tolist()}")
+            print(f"  scan [{i}/{len(scan_poses)}] 目标 xyz={np.round(T[:3,3],3).tolist()}")
             self.arm.move_arm(T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
                               timeout=self.ARM_TIMEOUT)
+            # 到位后等一下让位姿稳定 + ee_pose 刷新到最新 (桥 20Hz 发布有滞后)
+            time.sleep(0.3)
             T_gripper2base = self.arm.get_ee_pose(timeout=3.0)
+            print(f"    ee2base xyz={np.round(T_gripper2base[:3,3],4).tolist()} "
+                  f"quat={np.round(_rotmat_to_quat(T_gripper2base[:3,:3]),4).tolist()}")
             pts_cam, cols_cam = self.camera.get_point_cloud()
-            print(f"    {len(pts_cam)} 点")
+            print(f"    点云 {len(pts_cam)} 点")
             if len(pts_cam) > 0:
                 frames.append((pts_cam, cols_cam, T_gripper2base))
         if not frames:

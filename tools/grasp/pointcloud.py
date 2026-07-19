@@ -300,11 +300,28 @@ def _to_pcd(points, colors=None, default_color=(0.7, 0.7, 0.7)):
     return pcd
 
 
+def _show_with_picking(geometries, title):
+    """弹窗显示点云, 支持 shift+左键拾取点并打印其坐标 (base 系, 米)。
+    用 VisualizerWithVertexSelection (open3d 0.19 移除了 PointCloudPicker, 这是替代)。
+    关闭窗口后返回 (阻塞)。
+    操作: shift+左键选点 (可多选), 终端实时打印选中点坐标; 关闭窗口继续。"""
+    viz = o3d.visualization.VisualizerWithVertexSelection()
+    viz.create_window(window_name=title)
+    for g in geometries:
+        viz.add_geometry(g)
+    viz.register_selection_changed_callback(
+        lambda: [print(f"  拾取点 (base, m): "
+                       f"[{p.coord[0]:.4f}, {p.coord[1]:.4f}, {p.coord[2]:.4f}]")
+                 for p in viz.get_picked_points()])
+    viz.run()
+    viz.destroy_window()
+
+
 def show_pointcloud(points, colors=None, title="point cloud", center=None,
                     frame_size=0.2):
-    """弹窗显示单一点云 (base 系)。附 base 坐标轴 (红x 绿y 蓝z), 便于对照点云位置。
+    """弹窗显示单一点云 (base 系)。附 base 坐标轴 (红x 绿y 蓝z)。
     center: 可选 (3,) 标注点, 画一个白球标记。
-    关闭窗口后返回 (阻塞)。注: open3d 默认不显示鼠标悬停点坐标, 靠坐标轴+打印对照。"""
+    shift+左键拾取点 -> 终端打印坐标。关闭窗口返回 (阻塞)。"""
     geos = [_to_pcd(points, colors)]
     geos.append(o3d.geometry.TriangleMesh.create_coordinate_frame(size=frame_size))
     if center is not None:
@@ -312,15 +329,17 @@ def show_pointcloud(points, colors=None, title="point cloud", center=None,
         sph.translate(np.asarray(center, dtype=np.float64))
         sph.paint_uniform_color([1.0, 1.0, 1.0])
         geos.append(sph)
-    o3d.visualization.draw_geometries(geos, window_name=title)
+    print(f"[{title}] shift+左键拾取点查看坐标, 关闭窗口继续")
+    _show_with_picking(geos, title)
 
 
 def show_match(scene_points, scene_colors, workpiece_points,
                workpiece_color=(0.05, 0.85, 0.20), center=None, title="ICP match"):
     """弹窗显示: 场景点云 (原色/灰) + 工件模板点云 (绿色) 叠加 + base 坐标轴。
-    直观核对 ICP 配准效果与工件在场景中的位置。关闭窗口后返回 (阻塞)。
+    直观核对 ICP 配准效果与工件在场景中的位置。
     - scene_points: (N,3) base 系米; scene_colors: (N,3) uint8 RGB 或 None
-    - workpiece_points: (M,3) base 系米 (已配准); center: 可选标注点"""
+    - workpiece_points: (M,3) base 系米 (已配准); center: 可选标注点 (黄球)
+    shift+左键拾取点 -> 终端打印坐标。关闭窗口返回 (阻塞)。"""
     geos = [_to_pcd(scene_points, scene_colors),
             _to_pcd(workpiece_points, default_color=workpiece_color)]
     geos.append(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2))
@@ -329,5 +348,5 @@ def show_match(scene_points, scene_colors, workpiece_points,
         sph.translate(np.asarray(center, dtype=np.float64))
         sph.paint_uniform_color([1.0, 1.0, 0.0])   # 黄球标工件中心
         geos.append(sph)
-    o3d.visualization.draw_geometries(
-        geos, window_name=f"{title} (绿=工件模板, 灰/原色=场景, 黄球=工件中心; 关闭继续)")
+    print(f"[{title}] 绿=工件模板, 灰/原色=场景, 黄球=工件中心; shift+左键拾取点; 关闭继续")
+    _show_with_picking(geos, f"{title} (绿=模板 灰=场景 黄球=工件中心)")
