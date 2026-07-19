@@ -120,7 +120,7 @@ class GraspTemplateBased(Grasp):
             self.arm.move_arm(T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
                               timeout=self.ARM_TIMEOUT)
             # 到位后等一下让位姿稳定 + ee_pose 刷新到最新 (桥 20Hz 发布有滞后)
-            time.sleep(0.3)
+            time.sleep(1)
             T_gripper2base = self.arm.get_ee_pose(timeout=3.0)
             print(f"    ee2base xyz={np.round(T_gripper2base[:3,3],4).tolist()} "
                   f"quat={np.round(_rotmat_to_quat(T_gripper2base[:3,:3]),4).tolist()}")
