@@ -40,6 +40,8 @@ SCAN_POSES = [
     # _pose([0.394, -0.292, -0.223], [-2.4, 2.4, 90.7]),  # real example, dont delete
     _pose([0.400, -0.300, -0.223], [0, 0, 90]),
     _pose([0.350, -0.300, -0.223], [0, 0, 90]),
+    _pose([0.350, -0.250, -0.223], [0, 0, 90]),
+    _pose([0.400, -0.250, -0.223], [0, 0, 90]),
 ]
 
 # ---- ee 相对物体中心的位姿 (含厚度修正 + ee 偏置/姿态), 全部内化在此 4x4 ----
@@ -86,8 +88,12 @@ def main(argv=None):
             g.warm_up()
             pointcloud = g.scan(SCAN_POSES)
 
-            # 遍历模板 (假设每个模板在场景中都能匹配到一个工件)
-            templates = sorted(f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".ply"))
+            # 按大->中->小 顺序抓取 (显式指定, 不依赖文件名排序)
+            templates = [
+                "hex_hole_40mm_45mm_35mm.ply",   # 大
+                "hex_hole_30mm_35mm.ply",         # 中
+                "hex_hole_24mm_27mm_M27.ply",     # 小 (M27)
+            ]
             for tpl in templates:
                 key = os.path.splitext(tpl)[0]
                 thickness = NUT_THICKNESS_M.get(key, 0.005)
