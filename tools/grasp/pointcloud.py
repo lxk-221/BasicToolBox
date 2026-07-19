@@ -196,8 +196,7 @@ def _show_with_picking(geometries, title, point_size=5.0):
     """弹窗显示点云。关闭窗口后返回 (阻塞)。
     用 draw_geometries (与原 client visualize_rpc_debug.py 一致, 渲染最可靠)。
     可视化时按 n 打开全局设置面板可调点大小; shift+右键拖动旋转, 滚轮缩放。"""
-    o3d.visualization.draw_geometries(geometries, window_name=title,
-                                      point_size=point_size)
+    o3d.visualization.draw_geometries(geometries, window_name=title)
 
 
 def show_pointcloud(points, colors=None, title="point cloud", center=None, frame_size=0.5):
