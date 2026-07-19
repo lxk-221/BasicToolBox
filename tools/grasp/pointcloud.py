@@ -13,6 +13,7 @@
 
 可视化: show_pointcloud / show_match (shift+左键拾取点坐标)。
 """
+import glob
 import os
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
@@ -232,3 +233,21 @@ def show_match(scene_points, scene_colors, workpiece_points,
         geos.append(sph)
     print(f"[{title}] 亮红=模板 灰=场景 黄球=工件中心 红x绿y蓝z=base; shift+左键拾取点; 关闭继续")
     _show_with_picking(geos, f"{title} (红=模板 灰=场景)")
+
+if __name__ == "__main__":
+    # 在同一窗口并排显示三个模板 (各自加 x 方向 offset 平移开), 便于一眼对比尺寸。
+    template_dir = "/home/grasp/xukun/grasp/BasicToolBox/tools/grasp/templates"
+    template_files = sorted(glob.glob(os.path.join(template_dir, "*.ply")))
+    colors = [(1.0, 0.1, 0.1), (0.1, 1.0, 0.1), (0.1, 0.1, 1.0)]   # 红/绿/蓝
+    X_STEP = 0.12   # 各模板 x 方向间隔 (米), 大于最大模板直径 0.08 即可分开
+    geos = [o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)]
+    for i, tpl_path in enumerate(template_files):
+        tpl = o3d.io.read_point_cloud(tpl_path)
+        tpl.translate([i * X_STEP, 0, 0])      # 各自 offset 平移
+        tpl.paint_uniform_color(colors[i % len(colors)])
+        pts = np.asarray(tpl.points)
+        print(f"{os.path.basename(tpl_path)}: {len(pts)} 点, "
+              f"边长≈{(pts[:,0].max()-pts[:,0].min())*1000:.0f}mm "
+              f"(offset x={i*X_STEP:.2f}m, 色={colors[i%len(colors)]})")
+        geos.append(tpl)
+    o3d.visualization.draw_geometries(geos, window_name="3 templates size compare (红/绿/蓝)")
