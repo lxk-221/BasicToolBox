@@ -138,6 +138,29 @@ class LcmCommander:
             raise RuntimeError(f"arm 指令 cmd_id={cmd_id} 执行失败: {fb.error}")
         return True
 
+    def move_arm_linear(self, T_start, T_end, step_m=0.01, speed=0.8, accel=0.8,
+                        timeout: Optional[float] = None) -> None:
+        """笛卡尔直线插值: 从 T_start 到 T_end, 按 step_m 步长发多个 move_pose。
+        末端走近似直线 (避免关节运动的不确定路径, 防止碰其他零件)。
+        平移插值 (xyz), 姿态用 slerp 球面插值 (避免欧拉角奇异)。
+        step_m: 每步平移距离 (米), 默认 1cm。"""
+        from scipy.spatial.transform import Rotation as Rot, Slerp
+        T_start = np.asarray(T_start, dtype=np.float64).reshape(4, 4)
+        T_end = np.asarray(T_end, dtype=np.float64).reshape(4, 4)
+        dist = float(np.linalg.norm(T_end[:3, 3] - T_start[:3, 3]))
+        steps = max(1, int(np.ceil(dist / step_m)))
+        # 姿态 slerp
+        rots = Rot.from_matrix(np.stack([T_start[:3, :3], T_end[:3, :3]]))
+        key_times = [0, 1]
+        slerp = Slerp(key_times, rots)
+        alphas = np.linspace(0, 1, steps + 1)[1:]   # 跳过起点 (已在起点)
+        for i, alpha in enumerate(alphas, 1):
+            T = np.eye(4, dtype=np.float64)
+            T[:3, :3] = slerp(alpha).as_matrix()
+            T[:3, 3] = T_start[:3, 3] * (1 - alpha) + T_end[:3, 3] * alpha
+            self.move_arm(T, speed=speed, accel=accel, block=True, timeout=timeout)
+        print(f"    move_arm_linear: {dist*1000:.1f}mm / {steps}步 (step={step_m*1000:.0f}mm)")
+
     def move_joints(self, joints, speed=0.8, accel=0.8, block=True,
                     timeout: Optional[float] = None) -> bool:
         """发关节空间运动指令 (WARMUP/COOLDOWN 用, 避开笛卡尔插值的奇异/碰撞)。

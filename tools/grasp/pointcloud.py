@@ -132,8 +132,8 @@ def voxel_downsample(points, colors=None, voxel_size=0.002):
 # ============================================================================
 # 5. 欧式聚类 (DBSCAN) — 把空间分离的多个物体分成独立簇
 # ============================================================================
-def cluster(points, colors=None, eps=0.020, min_points=10,
-            max_z_spread=0.030):
+def cluster(points, colors=None, eps=0.010, min_points=10,
+            max_z_spread=0.040):
     """DBSCAN 欧式聚类 -> 多个物体簇。
     eps: 邻域半径 (米), 同一簇内点间距 < eps。
     min_points: 核心点邻域最少点数, 过滤小噪声簇。

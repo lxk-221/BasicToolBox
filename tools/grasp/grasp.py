@@ -62,6 +62,7 @@ class GraspTemplateBased(Grasp):
     # ---- 写死的默认配置 (场景相关, 后续可加 setter 覆盖) ----
     VOXEL_SIZE_M = 0.002
     HAND_READY = [255, 10, 255, 255, 255, 255]
+    HAND_PRE = [220, 5, 220, 220, 220, 220]
     HAND_GRASP = [0, 5, 70, 80, 80, 70]
     HAND_RELEASE = [255, 5, 255, 255, 255, 255]
     HAND_INIT = [255, 5, 255, 255, 255, 255]
@@ -137,10 +138,10 @@ class GraspTemplateBased(Grasp):
             raise RuntimeError("扫描未取到任何点云")
         pts, cols = pc.merge(frames, self.T_cam2gripper)
         print(f"  拼合 {len(pts)} 点")
-        pc.show_pointcloud(pts, cols, title="[1] 拼合后 (base系)")
+        #pc.show_pointcloud(pts, cols, title="[1] 拼合后 (base系)")
         pts, cols = pc.voxel_downsample(pts, cols, self.VOXEL_SIZE_M)
         print(f"  下采样 {len(pts)} 点")
-        pc.show_pointcloud(pts, cols, title="[2] voxel 下采样后")
+        #pc.show_pointcloud(pts, cols, title="[2] voxel 下采样后")
         return pts, cols
 
     # 各动作高度参数 (复刻 xyz_bak client execute_control_pose 的数值, 保证一致):
@@ -150,11 +151,11 @@ class GraspTemplateBased(Grasp):
     # 原程序 GRASP_OFFSET_M[2]=0.23 是以大零件(厚0.035)为基准 (含 0.035/2 下沉到厚度中心)。
     # 改为不含厚度的基础值 (0.23+0.035/2), get_grasp_pose 按实际 thickness 动态减 thickness/2。
     BASE_THICKNESS_M = 0.035   # 原基准厚度 (大零件), GRASP_OFFSET_M[2] 以此为基准
-    GRASP_OFFSET_M = np.array([-0.07, 0.022, 0.23 + BASE_THICKNESS_M / 2], dtype=np.float64)
+    GRASP_OFFSET_M = np.array([-0.08, 0.022, 0.250], dtype=np.float64)
     GRASP_RPY_RAD = np.array([-55.0, 0.0, 90.0]) * np.pi / 180.0
     DESCEND_M = 0.13           # approach: 先到 grasp_pose 上方 0.13, 再下降 0.13 (原程序 step2->3)
-    RAISE_M = 0.25             # 抓后抬起 (原程序 step5)
-    PLACE_DESCEND_M = 0.05     # 放置: 从上方下降 (原程序 step7)
+    RAISE_M = 0.20             # 抓后抬起 (原程序 step5)
+    PLACE_DESCEND_M = 0.08     # 放置: 从上方下降 (原程序 step7)
     PLACE_RPY_RAD = np.array([-60.0, 0.0, 145.0]) * np.pi / 180.0
     #PLACE_XYZ = np.array([0.262, -0.09, 0.0], dtype=np.float64)   # 放置 xy (z 动态取抬起高度)
     PLACE_XYZ = np.array([0.345, -0.015, 0.0], dtype=np.float64)   # 放置 xy (z 动态取抬起高度)
@@ -176,10 +177,10 @@ class GraspTemplateBased(Grasp):
         # 分割 = 范围过滤 + RANSAC 去平面 (两步原子, 中间可视化便于调参)
         pts, cols = pc.range_filter(pts, cols, x_min=0.2, z_min=-0.55)
         print(f"  范围过滤后 {len(pts)} 点")
-        pc.show_pointcloud(pts, cols, title="[3] 范围过滤后")
+        #pc.show_pointcloud(pts, cols, title="[3] 范围过滤后")
         pts, cols, _plane = pc.ransac_filter_plane(pts, cols)
         print(f"  RANSAC 去平面后 {len(pts)} 点")
-        pc.show_pointcloud(pts, cols, title="[4] RANSAC 去平面后")
+        #pc.show_pointcloud(pts, cols, title="[4] RANSAC 去平面后")
 
         if len(pts) < 50:
             raise RuntimeError(f"分割后点太少 ({len(pts)})")
@@ -195,8 +196,7 @@ class GraspTemplateBased(Grasp):
             color = (rng.random(3) * 255).astype(np.uint8)
             all_pts.append(c_pts)
             all_cols.append(np.tile(color, (len(c_pts), 1)))
-        pc.show_pointcloud(np.vstack(all_pts), np.vstack(all_cols),
-                           title="[5] 聚类后 (每簇一色)")
+        pc.show_pointcloud(np.vstack(all_pts), np.vstack(all_cols), title="[5] 聚类后 (每簇一色)")
 
         # 逐簇 ICP 匹配该模板, 取 fitness 最高 (rmse 次之) 的簇作为目标物体。
         # size 天然区分: 大模板匹配大簇 fitness 高, 匹配中小簇 fitness 低。
@@ -244,18 +244,21 @@ class GraspTemplateBased(Grasp):
               f"rpy_deg={np.round(np.degrees(self.GRASP_RPY_RAD),1).tolist()}")
         self.arm.move_arm(grasp_pose, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
                           timeout=self.ARM_TIMEOUT)
+        print(f"  step1 hand PRE {self.HAND_PRE}")
+        self.hand.move_hand(self.HAND_PRE, timeout=self.HAND_TIMEOUT)
 
     def grasp(self, grasp_pose):
         """抓取 (复刻原程序 step3 下降 + step4 抓):
-          step3: 从 grasp_pose 下降 DESCEND_M 到真正抓取点
+          step3: 从 grasp_pose 直线下降 DESCEND_M 到真正抓取点 (避免碰其他零件)
           step4: 抓手 GRASP。"""
         grasp_down = np.asarray(grasp_pose, dtype=np.float64).copy()
         grasp_down[2, 3] -= self.DESCEND_M
         self._last_grasp_down_T = grasp_down   # 记录给 place() 用
         print("=== grasp ===")
-        print(f"  step3 descend {self.DESCEND_M*1000:.0f}mm to xyz={np.round(grasp_down[:3,3],4).tolist()}")
-        self.arm.move_arm(grasp_down, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
-                          timeout=self.ARM_TIMEOUT)
+        print(f"  step3 linear descend {self.DESCEND_M*1000:.0f}mm to xyz={np.round(grasp_down[:3,3],4).tolist()}")
+        self.arm.move_arm_linear(grasp_pose, grasp_down, step_m=0.01,
+                                 speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
+                                 timeout=self.ARM_TIMEOUT)
         print(f"  step4 hand GRASP {self.HAND_GRASP}")
         self.hand.move_hand(self.HAND_GRASP, timeout=self.HAND_TIMEOUT)
 
@@ -270,12 +273,13 @@ class GraspTemplateBased(Grasp):
             raise RuntimeError("place 需先调 grasp() 记录抓取位")
         grasp_down = self._last_grasp_down_T
         print("=== place ===")
-        # step5 抬起 (从抓取位 + RAISE_M, 保持抓取 xy/rpy)
+        # step5 直线抬起 (从抓取位 + RAISE_M, 保持抓取 xy/rpy)
         raise_T = grasp_down.copy()
         raise_T[2, 3] += self.RAISE_M
-        print(f"  step5 raise {self.RAISE_M*1000:.0f}mm to z={raise_T[2,3]:.4f}")
-        self.arm.move_arm(raise_T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
-                          timeout=self.ARM_TIMEOUT)
+        print(f"  step5 linear raise {self.RAISE_M*1000:.0f}mm to z={raise_T[2,3]:.4f}")
+        self.arm.move_arm_linear(grasp_down, raise_T, step_m=0.01,
+                                 speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
+                                 timeout=self.ARM_TIMEOUT)
         # step6 移到放置位上方 (固定 xy, z=抬起高度, 固定放置 rpy)
         place_above_T = np.eye(4, dtype=np.float64)
         place_above_T[:3, :3] = Rot.from_euler("xyz", self.PLACE_RPY_RAD).as_matrix()
@@ -284,19 +288,21 @@ class GraspTemplateBased(Grasp):
               f"rpy_deg={np.round(np.degrees(self.PLACE_RPY_RAD),1).tolist()}")
         self.arm.move_arm(place_above_T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
                           timeout=self.ARM_TIMEOUT)
-        # step7 下降到放置点
+        # step7 直线下降到放置点
         place_T = place_above_T.copy()
         place_T[2, 3] -= self.PLACE_DESCEND_M
-        print(f"  step7 place descend {self.PLACE_DESCEND_M*1000:.0f}mm to z={place_T[2,3]:.4f}")
-        self.arm.move_arm(place_T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
-                          timeout=self.ARM_TIMEOUT)
+        print(f"  step7 linear place descend {self.PLACE_DESCEND_M*1000:.0f}mm to z={place_T[2,3]:.4f}")
+        self.arm.move_arm_linear(place_above_T, place_T, step_m=0.01,
+                                 speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
+                                 timeout=self.ARM_TIMEOUT)
         # step8 松手
         print(f"  step8 hand RELEASE {self.HAND_RELEASE}")
         self.hand.move_hand(self.HAND_RELEASE, timeout=self.HAND_TIMEOUT)
-        # step9 抬回放置位上方
-        print(f"  step9 raise back to place_above")
-        self.arm.move_arm(place_above_T, speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
-                          timeout=self.ARM_TIMEOUT)
+        # step9 直线抬回放置位上方
+        print(f"  step9 linear raise back to place_above")
+        self.arm.move_arm_linear(place_T, place_above_T, step_m=0.01,
+                                 speed=self.ARM_SPEED, accel=self.ARM_ACCEL,
+                                 timeout=self.ARM_TIMEOUT)
 
 
 class GraspModelBased(Grasp):
